@@ -1,0 +1,212 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es"> {# Changed language attribute to Spanish #}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ pdf_doc.title }}</title> {# Title is dynamic, no translation needed here #}
+    <!-- Bootstrap 5.0.2 CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" xintegrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous"> {# Corrected integrity #}
+    <style>
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f8f9fa;
+        }
+        .navbar {
+            margin-bottom: 20px;
+        }
+        .footer {
+            margin-top: 50px;
+            padding: 20px;
+            background-color: #343a40;
+            color: white;
+            text-align: center;
+        }
+        .pdf-viewer-container {
+            /* Now a flex container for the canvas and navigation */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #e9ecef;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 20px; /* Add some padding around the canvas */
+        }
+        canvas {
+            border: 1px solid #ccc;
+            max-width: 100%; /* Ensure canvas is responsive */
+            height: auto;
+        }
+        #pdfNav {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{% url 'home' %}">Anatomia App</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    {% if user.is_authenticated %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'pdf_list' %}">PDFs</a>
+                        </li>
+                        <li class="nav-item">
+                            {# This is the fixed logout button using a form #}
+                            <form action="{% url 'logout' %}" method="post" style="display: inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="nav-link btn btn-link text-light" style="border: none; background: none; padding: 0; cursor: pointer;">
+                                    Cerrar Sesión ({{ user.username }}) {# Translated Logout #}
+                                </button>
+                            </form>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'login' %}">Iniciar Sesión</a> {# Translated Login #}
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <h1 class="mb-4">{{ pdf_doc.title }}</h1>
+
+        <div class="pdf-viewer-container">
+            <canvas id="pdfViewer"></canvas>
+            <div id="pdfNav">
+                <button id="prevPage" class="btn btn-sm btn-info">Anterior</button> {# Translated Previous #}
+                <span id="pageInfo" class="mx-2">Página: <span id="currentPage">1</span> / <span id="totalPages"></span></span> {# Translated Page: #}
+                <button id="nextPage" class="btn btn-sm btn-info">Siguiente</button> {# Translated Next #}
+            </div>
+            <div id="pdfError" class="alert alert-danger mt-3" style="display: none;"></div>
+        </div>
+
+        <p class="mt-4">
+            <a href="{% url 'pdf_list' %}" class="btn btn-secondary">Volver a la Lista de PDFs</a> {# Translated Back to PDF List #}
+        </p>
+    </div>
+
+    <footer class="footer">
+        <p>&copy; 2025 Hecho por Juan Mitilo. Todos los derechos reservados.</p> {# Translated footer #}
+    </footer>
+
+    <!-- Bootstrap 5.0.2 JS CDN (bundle includes Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" xintegrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script> {# Corrected integrity #}
+
+    <!-- PDF.js Library -->
+    <script src="{% static 'pdfjs/build/pdf.mjs' %}" type="module" defer></script>
+    <script type="module">
+        // Check if pdfjsLib is defined after the script has loaded
+        console.log('pdfjsLib after script load:', typeof pdfjsLib !== 'undefined' ? pdfjsLib : 'not defined');
+
+        // Ensure pdfjsLib is defined before accessing GlobalWorkerOptions
+        if (typeof pdfjsLib === 'undefined') {
+            console.error('pdfjsLib is not defined. PDF.js library might not have loaded correctly.');
+            const pdfErrorDiv = document.getElementById('pdfError');
+            pdfErrorDiv.textContent = 'Error: La biblioteca del visor de PDF no se cargó. Por favor, verifica las rutas de los archivos estáticos y la consola del navegador en busca de errores.'; {# Translated error message #}
+            pdfErrorDiv.style.display = 'block';
+        } else {
+            // Set the workerSrc to the location of the pdf.worker.js file
+            // This is crucial for PDF.js to work correctly.
+            pdfjsLib.GlobalWorkerOptions.workerSrc = '{% static "pdfjs/build/pdf.worker.mjs" %}';
+
+            const pdfViewer = document.getElementById('pdfViewer');
+            const ctx = pdfViewer.getContext('2d');
+            const currentPageSpan = document.getElementById('currentPage');
+            const totalPagesSpan = document.getElementById('totalPages');
+            const prevPageBtn = document.getElementById('prevPage');
+            const nextPageBtn = document.getElementById('nextPage');
+            const pdfErrorDiv = document.getElementById('pdfError');
+
+            let pdfDoc = null; // Represents the PDF document
+            let pageNum = 1;   // Current page number
+
+            // Function to render a specific page
+            async function renderPage(num) {
+                if (!pdfDoc) return;
+
+                pageNum = num;
+                currentPageSpan.textContent = pageNum;
+
+                const page = await pdfDoc.getPage(num);
+                // Calculate scale to fit canvas width to container
+                const viewport = page.getViewport({ scale: 1 });
+                const containerWidth = pdfViewer.parentElement.clientWidth - 40; // Account for padding
+                const scale = containerWidth / viewport.width;
+                const scaledViewport = page.getViewport({ scale: scale });
+
+                // Set canvas dimensions to match PDF page
+                pdfViewer.height = scaledViewport.height;
+                pdfViewer.width = scaledViewport.width;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: scaledViewport
+                };
+                await page.render(renderContext).promise;
+
+                // Update button states
+                prevPageBtn.disabled = pageNum <= 1;
+                nextPageBtn.disabled = pageNum >= pdfDoc.numPages;
+            }
+
+            // Function to load the PDF
+            async function loadPdf() {
+                // Your Django view for serving the PDF
+                // This URL will fetch the binary PDF file from your server
+                const url = "{% url 'serve_pdf_file' pdf_doc.pk %}";
+
+                try {
+                    const loadingTask = pdfjsLib.getDocument(url);
+                    pdfDoc = await loadingTask.promise;
+
+                    totalPagesSpan.textContent = pdfDoc.numPages;
+                    renderPage(pageNum); // Render the first page
+
+                } catch (error) {
+                    console.error('Error loading PDF:', error);
+                    pdfViewer.style.display = 'none'; // Hide canvas
+                    document.getElementById('pdfNav').style.display = 'none'; // Hide nav
+                    pdfErrorDiv.textContent = 'Error al cargar el PDF. Asegúrate de que el archivo existe y es accesible. Error: ' + error.message; {# Translated error message #}
+                    pdfErrorDiv.style.display = 'block'; // Show error message
+                }
+            }
+
+            // Event listeners for navigation
+            prevPageBtn.addEventListener('click', () => {
+                if (pageNum <= 1) return;
+                pageNum--;
+                renderPage(pageNum);
+            });
+
+            nextPageBtn.addEventListener('click', () => {
+                if (pageNum >= pdfDoc.numPages) return;
+                pageNum++;
+                renderPage(pageNum);
+            });
+
+            // Load PDF when the page loads
+            window.onload = loadPdf;
+        }
+    </script>
+</body>
+</html>
